@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon",
-    "build": "tsup src/index.ts --format cjs --out-dir dist && cp ./package.json ./dist",
+    "build": "tsup src/index.ts --format cjs --out-dir dist",
     "start": "node dist/index.js",
     "seed:categories": "ts-node --transpile-only src/seeds/category.seed.ts"
   },
