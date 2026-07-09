@@ -10,7 +10,7 @@ import {
 
 export const createOrderController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const data = createOrderSchema.parse(req.body);
     const result = await createOrderService(userId, data);
 
@@ -23,7 +23,7 @@ export const createOrderController = asyncHandler(
 
 export const getUserOrdersController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const result = await getUserOrdersService(userId);
 
     res.status(HTTPSTATUS.OK).json({
@@ -35,7 +35,7 @@ export const getUserOrdersController = asyncHandler(
 
 export const getUserOrderByIdController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const { id } = getUserOrderByIdSchema.parse({ id: req.params.id });
     const result = await getUserOrderByIdService(userId, id);
 

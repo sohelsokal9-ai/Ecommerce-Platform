@@ -10,7 +10,7 @@ import {
 
 export const createReviewController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const data = createReviewSchema.parse(req.body);
     const result = await createReviewService(userId, data);
 
@@ -23,7 +23,7 @@ export const createReviewController = asyncHandler(
 
 export const getUserReviewsController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const result = await getUserReviewsService(userId);
 
     res.status(HTTPSTATUS.OK).json({
@@ -35,7 +35,7 @@ export const getUserReviewsController = asyncHandler(
 
 export const getUserReviewableOrderItemsController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const result = await getUserReviewableOrderItemsService(userId);
 
     res.status(HTTPSTATUS.OK).json({

@@ -1,10 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import mongoose from "mongoose";
 import { getStripeClient } from "../config/stripe.config";
 import { envConfig } from "../config/env.config";
-import OrderModel from "../models/order.model";
-import CartModel from "../models/cart.model";
-import ProductModel from "../models/product.model";
+import getSupabaseClient from "../config/supabase.config";
 import {
   ORDER_STATUS,
   PAYMENT_STATUS,
@@ -31,12 +28,19 @@ export const stripeWebhookHandler = async (req: Request, res: Response, next: Ne
   };
   const orderId = session.metadata?.orderId;
 
-  if (!orderId || !mongoose.isValidObjectId(orderId)) {
+  if (!orderId) {
     res.status(200).json({ received: true });
     return;
   }
 
-  const order = await OrderModel.findById(orderId);
+  const supabase = getSupabaseClient();
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single();
+
   if (!order) {
     res.status(200).json({ received: true });
     return;
@@ -44,38 +48,57 @@ export const stripeWebhookHandler = async (req: Request, res: Response, next: Ne
 
   switch (event.type) {
     case "checkout.session.completed": {
-      order.paymentStatus = PAYMENT_STATUS.PAID;
-      order.status = ORDER_STATUS.CONFIRMED;
-      order.statusHistory.push({
-        status: ORDER_STATUS.CONFIRMED,
-        date: new Date(),
-      });
+      const history = (order.status_history as any[]) || [];
+      history.push({ status: ORDER_STATUS.CONFIRMED, note: "", date: new Date().toISOString() });
 
-      await order.save();
+      await supabase
+        .from("orders")
+        .update({
+          payment_status: PAYMENT_STATUS.PAID,
+          status: ORDER_STATUS.CONFIRMED,
+          status_history: history,
+        })
+        .eq("id", orderId);
 
-      await CartModel.deleteOne({ userId: order.userId });
+      await supabase.from("carts").delete().eq("user_id", order.user_id);
 
-      for (const item of order.items) {
-        await ProductModel.findByIdAndUpdate(item.productId, {
-          $inc: { stockCount: -item.quantity },
-        });
+      const { data: items } = await supabase
+        .from("order_items")
+        .select("product_id, quantity")
+        .eq("order_id", orderId);
+
+      for (const item of items || []) {
+        const { data: product } = await supabase
+          .from("products")
+          .select("stock_count")
+          .eq("id", item.product_id)
+          .single();
+        if (product) {
+          await supabase
+            .from("products")
+            .update({ stock_count: Math.max(0, product.stock_count - item.quantity) })
+            .eq("id", item.product_id);
+        }
       }
 
-      console.log(`Order ${order.orderNo} paid and confirmed`);
+      console.log(`Order ${order.order_no} paid and confirmed`);
       break;
     }
 
     case "checkout.session.expired": {
-      order.paymentStatus = PAYMENT_STATUS.FAILED;
-      order.status = ORDER_STATUS.CANCELLED;
-      order.statusHistory.push({
-        status: ORDER_STATUS.CANCELLED,
-        date: new Date(),
-      });
+      const history = (order.status_history as any[]) || [];
+      history.push({ status: ORDER_STATUS.CANCELLED, note: "", date: new Date().toISOString() });
 
-      await order.save();
+      await supabase
+        .from("orders")
+        .update({
+          payment_status: PAYMENT_STATUS.FAILED,
+          status: ORDER_STATUS.CANCELLED,
+          status_history: history,
+        })
+        .eq("id", orderId);
 
-      console.log(`Order ${order.orderNo} payment expired`);
+      console.log(`Order ${order.order_no} payment expired`);
       break;
     }
   }

@@ -18,7 +18,7 @@ import {
   getAdminOrdersService,
   updateOrderStatusService,
 } from "../services/admin.service";
-import { uploadMultipleImagesToCloudinary } from "../utils/cloudinary.util";
+import { uploadMultipleImagesToSupabase } from "../utils/upload.util";
 import { generateAIAdminSchema } from "../validators/ai.validator";
 import { generateAIAdminService } from "../services/ai.service";
 import {
@@ -29,7 +29,7 @@ import {
 
 export const createProductController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const data = createProductSchema.parse(req.body);
     const product = await createProductService(userId, data);
 
@@ -92,14 +92,14 @@ export const uploadProductImagesController = asyncHandler(
   async (req: Request, res: Response) => {
     const files = req.files as Express.Multer.File[];
     try {
-      const uploaded = await uploadMultipleImagesToCloudinary(files);
+      const uploaded = await uploadMultipleImagesToSupabase(files);
       res.status(HTTPSTATUS.OK).json({
         message: "Images uploaded successfully",
         images: uploaded.map((image) => image.url),
       });
     } catch (error) {
-      console.error("Cloudinary Upload Error:", error); // Check your server logs here
-      throw error; // Or handle appropriately
+      console.error("Upload Error:", error);
+      throw error;
     }
   }
 );

@@ -1,26 +1,23 @@
-import mongoose, { Document, Schema } from "mongoose";
 import {
   ORDER_STATUS,
   OrderStatus,
-  ORDER_STATUS_VALUES,
   PaymentMethod,
-  PAYMENT_METHOD_VALUES,
   PaymentStatus,
-  PAYMENT_STATUS_VALUES,
   PAYMENT_STATUS,
 } from "../constants/enums";
 import { generateOrderNo } from "../utils/order.util";
 
 export interface IOrderItem {
-  _id: mongoose.Types.ObjectId;
-  productId: mongoose.Types.ObjectId;
+  id: string;
+  order_id: string;
+  product_id: string;
   name: string;
   image: string;
-  originalPrice: number;
-  discountPercent: number;
-  salePrice: number;
+  original_price: number;
+  discount_percent: number;
+  sale_price: number;
   quantity: number;
-  isReviewed: boolean
+  is_reviewed: boolean;
 }
 
 export interface IOrderAddress {
@@ -35,133 +32,31 @@ export interface IOrderAddress {
 
 export interface IOrderStatusHistory {
   status: OrderStatus;
-  note?: string;
-  date: Date;
+  note: string;
+  date: string;
 }
 
-export interface IOrder extends Document {
-  userId: mongoose.Types.ObjectId;
-  orderNo: string;
-  items: IOrderItem[];
-  shippingAddress: IOrderAddress;
-  paymentMethod: PaymentMethod;
-  paymentStatus: PaymentStatus;
+export interface IOrder {
+  id: string;
+  user_id: string;
+  order_no: string;
+  payment_method: PaymentMethod;
+  payment_status: PaymentStatus;
   status: OrderStatus;
-  statusHistory: IOrderStatusHistory[];
+  shipping_address: IOrderAddress;
   subtotal: number;
-  deliveryFee: number;
+  delivery_fee: number;
   tax: number;
   total: number;
-  createdAt: Date;
-  updatedAt: Date;
+  status_history: IOrderStatusHistory[];
+  created_at: string;
+  updated_at: string;
 }
 
-const orderItemSchema = new Schema<IOrderItem>(
-  {
-    productId: {
-      type: Schema.Types.ObjectId,
-      ref: "Product",
-      required: true,
-    },
-    name: { type: String, required: true },
-    image: { type: String, required: true },
-    originalPrice: { type: Number, required: true },
-    discountPercent: { type: Number, required: true, default: 0 },
-    salePrice: { type: Number, required: true },
-    quantity: { type: Number, required: true, min: 1 },
-    isReviewed: { type: Boolean, default: false },
-  },
-);
+export interface IOrderWithItems extends IOrder {
+  order_items: IOrderItem[];
+}
 
-const orderAddressSchema = new Schema<IOrderAddress>(
-  {
-    recipientName: { type: String, required: true },
-    phone: { type: String, required: true },
-    street: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    postalCode: { type: String, required: true },
-    country: { type: String, required: true },
-  },
-  { _id: false }
-);
-
-const orderStatusHistorySchema = new Schema<IOrderStatusHistory>(
-  {
-    status: { 
-        type: String,
-         enum: ORDER_STATUS_VALUES, 
-         required: true 
-        },
-    note: { type: String, default: "" },
-    date: { type: Date, default: Date.now },
-  },
-  { _id: false }
-);
-
-const orderSchema = new Schema<IOrder>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    orderNo: {
-      type: String,
-      required: true,
-      unique: true,
-      default: () => generateOrderNo()
-    },
-    items: {
-      type: [orderItemSchema],
-      required: true,
-    },
-    shippingAddress: {
-      type: orderAddressSchema,
-      required: true,
-    },
-    paymentMethod: {
-      type: String,
-      enum: PAYMENT_METHOD_VALUES,
-      required: true,
-    },
-    paymentStatus: {
-      type: String,
-      enum: PAYMENT_STATUS_VALUES,
-      default: PAYMENT_STATUS.PENDING,
-    },
-    status: {
-      type: String,
-      enum: ORDER_STATUS_VALUES,
-      default: ORDER_STATUS.PLACED,
-    },
-    statusHistory: {
-      type: [orderStatusHistorySchema],
-      default: () => [
-        {
-          status: ORDER_STATUS.PLACED,
-          date: new Date(),
-        },
-      ],
-    },
-    subtotal: { type: Number, required: true },
-    deliveryFee: { type: Number, required: true, default: 0 },
-    tax: { type: Number, required: true },
-    total: { type: Number, required: true },
-  },
-  {
-    timestamps: true,
-  }
-);
-
-orderSchema.index({ userId: 1, createdAt: -1 });
-
-// orderSchema.pre("validate", async function () {
-//   if (this.isNew) {
-//     this.orderNo = generateOrderNo();
-//   }
-// });
-
-const OrderModel = mongoose.model<IOrder>("Order", orderSchema);
-
-export default OrderModel;
+export const generateOrderNoValue = (): string => {
+  return generateOrderNo();
+};

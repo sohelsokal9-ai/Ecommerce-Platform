@@ -15,7 +15,7 @@ import {
 
 export const createAddressController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const data = createAddressSchema.parse(req.body);
     const address = await createAddressService(userId, data);
 
@@ -28,7 +28,7 @@ export const createAddressController = asyncHandler(
 
 export const getUserAddressesController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const result = await getUserAddressesService(userId);
 
     res.status(HTTPSTATUS.OK).json({
@@ -40,7 +40,7 @@ export const getUserAddressesController = asyncHandler(
 
 export const updateAddressController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const { addressId } = addressParamsSchema.parse(req.params);
     const data = updateAddressSchema.parse(req.body);
     const address = await updateAddressService(userId, addressId, data);
@@ -54,7 +54,7 @@ export const updateAddressController = asyncHandler(
 
 export const deleteAddressController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const { addressId } = addressParamsSchema.parse(req.params);
     const result = await deleteAddressService(userId, addressId);
 

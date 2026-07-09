@@ -1,118 +1,160 @@
-import mongoose from "mongoose";
-import OrderModel from "../models/order.model";
-import CartModel from "../models/cart.model";
-import AddressModel from "../models/address.model";
-import ProductModel from "../models/product.model";
-import UserModel from "../models/user.model";
+import getSupabaseClient from "../config/supabase.config";
 import { CreateOrderInput } from "../validators/order.validator";
 import { BadRequestException, NotFoundException } from "../utils/app-error";
 import { calculateCartTotals } from "../utils/cart.util";
 import { PAYMENT_METHODS, PaymentMethod } from "../constants/enums";
 import { getStripeClient, isStripeConfigured } from "../config/stripe.config";
 import { envConfig } from "../config/env.config";
-
+import { generateOrderNoValue } from "../models/order.model";
+import { mapRow, mapRows } from "../utils/map.util";
 
 export const createOrderService = async (
   userId: string,
   data: CreateOrderInput
 ) => {
   const { addressId, paymentMethod } = data;
+  const supabase = getSupabaseClient();
 
-  const cart = await CartModel.findOne({ userId }).populate({
-    path: "items.productId",
-    select: "name slug images originalPrice discountPercent salePrice stockCount",
-  });
+  const { data: cart } = await supabase
+    .from("carts")
+    .select("id")
+    .eq("user_id", userId)
+    .single();
 
-  if (!cart || !cart.items || cart.items.length === 0) {
+  if (!cart) {
     throw new BadRequestException("Cart is empty");
   }
 
-  const address = await AddressModel.findOne({ _id: addressId, userId });
+  const mappedCart = mapRow(cart as Record<string, unknown>);
+
+  const { data: cartItems } = await supabase
+    .from("cart_items")
+    .select("id, product_id, quantity, products(id, name, images, original_price, discount_percent, sale_price, stock_count)")
+    .eq("cart_id", mappedCart._id);
+
+  if (!cartItems || cartItems.length === 0) {
+    throw new BadRequestException("Cart is empty");
+  }
+
+  const mappedCartItems = mapRows(cartItems as Record<string, unknown>[]);
+
+  const { data: address } = await supabase
+    .from("addresses")
+    .select("*")
+    .eq("id", addressId)
+    .eq("user_id", userId)
+    .single();
+
   if (!address) {
     throw new NotFoundException("Address not found");
   }
 
-  const items = cart.items as unknown as Array<{
-    productId: {
-      _id: mongoose.Types.ObjectId;
-      name: string;
-      images: string[];
-      originalPrice: number;
-      discountPercent: number;
-      salePrice: number;
-      stockCount: number;
-    };
-    quantity: number;
-  }>;
+  const mappedAddress = mapRow(address as Record<string, unknown>);
 
-  const totals = calculateCartTotals(items);
-
-  const orderItems = items.map((item) => ({
-    productId: item.productId._id,
-    name: item.productId.name,
-    image: item.productId.images?.[0] ?? "",
-    originalPrice: item.productId.originalPrice,
-    discountPercent: item.productId.discountPercent,
-    salePrice: item.productId.salePrice,
+  const items = mappedCartItems.map((item: any) => ({
+    productId: item.productId,
+    product: item.products,
     quantity: item.quantity,
   }));
 
+  const cartTotalsItems = items.map((item) => ({
+    productId: { salePrice: item.product?.sale_price ?? 0 },
+    quantity: item.quantity,
+  }));
+
+  const totals = calculateCartTotals(cartTotalsItems);
+
+  const orderItems = items.map((item) => ({
+    product_id: item.productId,
+    name: item.product?.name || "",
+    image: item.product?.images?.[0] || "",
+    original_price: item.product?.original_price || 0,
+    discount_percent: item.product?.discount_percent || 0,
+    sale_price: item.product?.sale_price || 0,
+    quantity: item.quantity,
+    is_reviewed: false,
+  }));
+
   const shippingAddress = {
-    recipientName: address.recipientName,
-    phone: address.phone,
-    street: address.street,
-    city: address.city,
-    state: address.state,
-    postalCode: address.postalCode,
-    country: address.country,
+    recipientName: mappedAddress.recipientName,
+    phone: mappedAddress.phone,
+    street: mappedAddress.street,
+    city: mappedAddress.city,
+    state: mappedAddress.state,
+    postalCode: mappedAddress.postalCode,
+    country: mappedAddress.country,
   };
 
-  const order = await OrderModel.create({
-    userId,
-    items: orderItems,
-    shippingAddress,
-    paymentMethod: paymentMethod as PaymentMethod,
-    subtotal: totals.subtotal,
-    deliveryFee: totals.deliveryFee,
-    tax: totals.tax,
-    total: totals.orderTotal,
-  });
+  const orderNo = generateOrderNoValue();
 
-  const orderDoc = order as import("mongoose").Document & { _id: mongoose.Types.ObjectId };
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .insert({
+      user_id: userId,
+      order_no: orderNo,
+      payment_method: paymentMethod,
+      shipping_address: shippingAddress,
+      subtotal: totals.subtotal,
+      delivery_fee: totals.deliveryFee,
+      tax: totals.tax,
+      total: totals.orderTotal,
+      status_history: [{ status: "placed", note: "", date: new Date().toISOString() }],
+    })
+    .select()
+    .single();
+
+  if (orderError || !order) {
+    throw new BadRequestException(orderError?.message || "Failed to create order");
+  }
+
+  const mappedOrder = mapRow(order as Record<string, unknown>);
+
+  const orderItemsToInsert = orderItems.map((item) => ({
+    order_id: mappedOrder._id,
+    ...item,
+  }));
+
+  await supabase.from("order_items").insert(orderItemsToInsert);
 
   if (paymentMethod === PAYMENT_METHODS.CASH_ON_DELIVERY) {
-    await CartModel.deleteOne({ userId });
+    await supabase.from("cart_items").delete().eq("cart_id", mappedCart._id);
+    await supabase.from("carts").delete().eq("id", mappedCart._id);
 
-   await Promise.all(
-      items.map((item) =>
-        ProductModel.findByIdAndUpdate(item.productId, {
-          $inc: { stockCount: -item.quantity },
-        })
-      )
-    );
+    for (const item of items) {
+      await supabase.rpc("decrement_stock", {
+        p_product_id: item.productId,
+        p_quantity: item.quantity,
+      }).then(() => {}).catch(async () => {
+        const { data: product } = await supabase
+          .from("products")
+          .select("stock_count")
+          .eq("id", item.productId)
+          .single();
+        if (product) {
+          const mappedProduct = mapRow(product as Record<string, unknown>);
+          await supabase
+            .from("products")
+            .update({ stock_count: Math.max(0, (mappedProduct.stockCount as number) - item.quantity) })
+            .eq("id", item.productId);
+        }
+      });
+    }
 
-    return { order: orderDoc, stripeUrl: null };
+    return { order: mappedOrder, stripeUrl: null };
   }
 
   if (!isStripeConfigured()) {
     throw new BadRequestException("Online payment is not available. Please use Cash on Delivery.");
   }
 
-  const lineItems: Array<{
-    price_data: {
-      currency: string;
-      product_data: { name: string; images?: string[] };
-      unit_amount: number;
-    };
-    quantity: number;
-  }> = orderItems.map((item) => ({
+  const lineItems = orderItems.map((item) => ({
     price_data: {
       currency: "usd",
       product_data: {
         name: item.name,
         images: item.image ? [item.image] : [],
       },
-      unit_amount: Math.round(item.salePrice * 100),
+      unit_amount: Math.round(item.sale_price * 100),
     },
     quantity: item.quantity,
   }));
@@ -139,18 +181,19 @@ export const createOrderService = async (
     });
   }
 
-  const user = await UserModel.findById(userId).select("email").lean();
-  const customerEmail = user?.email;
+  const { data: user } = await supabase
+    .from("users")
+    .select("email")
+    .eq("id", userId)
+    .single();
 
   const session = await getStripeClient().checkout.sessions.create({
     payment_method_types: ["card"],
     mode: "payment",
-    customer_email: customerEmail,
+    customer_email: user?.email,
     line_items: lineItems,
-    metadata: { 
-      orderId: orderDoc._id.toString()
-    },
-    success_url: `${envConfig.FRONTEND_ORIGIN}/orders/${orderDoc._id}`,
+    metadata: { orderId: mappedOrder._id as string },
+    success_url: `${envConfig.FRONTEND_ORIGIN}/orders/${mappedOrder._id}`,
     cancel_url: `${envConfig.FRONTEND_ORIGIN}/checkout`,
   });
 
@@ -158,23 +201,57 @@ export const createOrderService = async (
 };
 
 export const getUserOrdersService = async (userId: string) => {
-  const orders = await OrderModel.find({ userId })
-    .sort({ createdAt: -1 })
-    .lean();
-  return { orders };
+  const supabase = getSupabaseClient();
+
+  const { data: orders, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const mappedOrders = mapRows((orders || []) as Record<string, unknown>[]);
+
+  const ordersWithItems = await Promise.all(
+    mappedOrders.map(async (order) => {
+      const { data: items } = await supabase
+        .from("order_items")
+        .select("*")
+        .eq("order_id", (order as any)._id);
+      const mappedItems = mapRows((items || []) as Record<string, unknown>[]);
+      return { ...order, order_items: mappedItems };
+    })
+  );
+
+  return { orders: ordersWithItems };
 };
 
 export const getUserOrderByIdService = async (
   userId: string,
   orderId: string
 ) => {
-  if (!mongoose.isValidObjectId(orderId)) {
-    throw new BadRequestException("Invalid order ID");
-  }
-  const order = await OrderModel.findOne({ _id: orderId, userId }).lean();
-  if (!order) {
+  const supabase = getSupabaseClient();
+
+  const { data: order, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error || !order) {
     throw new NotFoundException("Order not found");
   }
 
-  return { order };
+  const mappedOrder = mapRow(order as Record<string, unknown>);
+
+  const { data: items } = await supabase
+    .from("order_items")
+    .select("*")
+    .eq("order_id", (mappedOrder as any)._id);
+
+  const mappedItems = mapRows((items || []) as Record<string, unknown>[]);
+
+  return { order: { ...mappedOrder, order_items: mappedItems } };
 };

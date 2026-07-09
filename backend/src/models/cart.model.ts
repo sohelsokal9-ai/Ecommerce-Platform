@@ -1,59 +1,26 @@
-import mongoose, { Document, Schema } from "mongoose";
+export interface ICart {
+  id: string;
+  user_id: string | null;
+  guest_cart_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface ICartItem {
-  productId: mongoose.Types.ObjectId;
+  id: string;
+  cart_id: string;
+  product_id: string;
   quantity: number;
 }
 
-export interface ICart extends Document {
-  userId: mongoose.Types.ObjectId | null;
-  guestCartId: string | null;
-  items: ICartItem[];
-  createdAt: Date;
-  updatedAt: Date;
+export interface ICartItemWithProduct extends ICartItem {
+  products: {
+    name: string;
+    slug: string;
+    images: string[];
+    sale_price: number;
+    original_price: number;
+    discount_percent: number;
+    stock_count: number;
+  } | null;
 }
-
-const cartItemSchema = new Schema<ICartItem>(
-  {
-    productId: {
-      type: Schema.Types.ObjectId,
-      ref: "Product",
-      required: true,
-    },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1,
-      default: 1,
-    },
-  },
-  { _id: false }
-);
-
-const cartSchema = new Schema<ICart>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-    guestCartId: {
-      type: String,
-      default: null,
-    },
-    items: {
-      type: [cartItemSchema],
-      default: [],
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
-
-cartSchema.index({ userId: 1 });
-cartSchema.index({ guestCartId: 1 });
-
-const CartModel = mongoose.model<ICart>("Cart", cartSchema);
-
-export default CartModel;

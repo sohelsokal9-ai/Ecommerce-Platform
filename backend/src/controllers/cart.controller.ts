@@ -7,7 +7,7 @@ import { upsertCartService, getCartService } from "../services/cart.service";
 export const upsertCartController = asyncHandler(
   async (req: Request, res: Response) => {
     const data = upsertCartSchema.parse(req.body);
-    const userId = req.user ? req.user._id.toString() : null;
+    const userId = req.user ? req.user.id : null;
     const guestCartId = req.guestCartId ?? null;
 
     const result = await upsertCartService(userId, guestCartId, data);
@@ -21,7 +21,7 @@ export const upsertCartController = asyncHandler(
 
 export const getCartController = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user ? req.user._id.toString() : null;
+    const userId = req.user ? req.user.id : null;
     const guestCartId = req.guestCartId ?? null;
 
     const result = await getCartService(userId, guestCartId);

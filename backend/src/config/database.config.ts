@@ -1,12 +1,13 @@
-import mongoose from "mongoose"
-import { envConfig } from "./env.config"
+import { getSupabaseClient } from "./supabase.config";
 
 export const connectDatabase = async () => {
-    try {
-        await mongoose.connect(envConfig.MONGO_URI);
-        console.log("Database connected!")
-    } catch (error) {
-        console.log("Database connection error", error);
-        process.exit(1)
-    }
-}
+  try {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from("users").select("id").limit(1);
+    if (error) throw error;
+    console.log("Database connected!");
+  } catch (error) {
+    console.log("Database connection error", error);
+    process.exit(1);
+  }
+};

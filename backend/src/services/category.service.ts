@@ -1,9 +1,16 @@
-import CategoryModel from "../models/category.model";
+import getSupabaseClient from "../config/supabase.config";
+import { mapRows } from "../utils/map.util";
 
 export const getCategoriesService = async () => {
-  const categories = await CategoryModel.find({ isActive: true })
-    .sort({ _id: 1, })
-    .lean();
+  const supabase = getSupabaseClient();
 
-  return { categories };
+  const { data: categories, error } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("is_active", true)
+    .order("id", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return { categories: mapRows(categories || []) };
 };

@@ -56,5 +56,5 @@ export const optionalCartAuth = (
     req.user = user;
     req.guestCartId = null;
     return next();
-  })(req,res, next)
+  })(req, res, next);
 };

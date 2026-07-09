@@ -14,13 +14,13 @@ import {
 import { USER_ROLES } from "../constants/enums";
 
 const toAuthUser = (user: any) => ({
-  _id: String(user._id),
+  _id: String(user.id),
   name: user.name,
   email: user.email,
   avatar: user.avatar ?? null,
   isAdmin: user.role === USER_ROLES.ADMIN,
-  createdAt: user.createdAt,
-  updatedAt: user.updatedAt,
+  createdAt: user.created_at,
+  updatedAt: user.updated_at,
 });
 
 export const registerController = asyncHandler(
@@ -29,13 +29,13 @@ export const registerController = asyncHandler(
     const guestCartId = req.cookies?.instant_guest_cart_id ?? null;
 
     const user = await registerAndMergeGuestCart(data, guestCartId);
-    const userId = user._id.toString();
+    const userId = user.id;
 
     if (guestCartId) clearGuestCartCookie(res);
 
     return setJwtAuthCookie({ res, userId }).status(HTTPSTATUS.CREATED).json({
       message: "User registered successfully",
-      user,
+      user: toAuthUser(user),
     });
   }
 );
@@ -50,13 +50,13 @@ export const loginController = asyncHandler(
       data.password,
       guestCartId
     );
-    const userId = user._id.toString();
+    const userId = user.id;
 
     if (guestCartId) clearGuestCartCookie(res);
 
     return setJwtAuthCookie({ res, userId }).status(HTTPSTATUS.OK).json({
       message: "User logged in successfully",
-      user,
+      user: toAuthUser(user),
     });
   }
 );
@@ -71,6 +71,6 @@ export const authStatusController = asyncHandler(async (req: Request, res: Respo
   const user = req.user;
   res.status(HTTPSTATUS.OK).json({
     message: "User is authenticated",
-    user: user ? toAuthUser(user): null,
+    user: user ? toAuthUser(user) : null,
   });
 });

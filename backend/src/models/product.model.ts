@@ -1,124 +1,38 @@
-import mongoose, { Document, Schema } from "mongoose";
 import slugify from "slugify";
 import { calculateSalePrice } from "../utils/price.util";
 
-export interface IProduct extends Document {
-  userId: mongoose.Types.ObjectId;
-  categoryId: mongoose.Types.ObjectId;
+export interface IProduct {
+  id: string;
+  user_id: string;
+  category_id: string;
   name: string;
   slug: string;
-  description?: string;
+  description?: string | null;
   images: string[];
-  originalPrice: number;
-  salePrice: number;
-  discountPercent: number;
-  discountLabel?: string;
+  original_price: number;
+  sale_price: number;
+  discount_percent: number;
+  discount_label?: string | null;
   unit: string;
-  stockCount: number;
-  ratingAverage: number;
-  reviewCount: number;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  stock_count: number;
+  rating_average: number;
+  review_count: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-const productSchema = new Schema<IProduct>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    categoryId: {
-      type: Schema.Types.ObjectId,
-      ref: "Category",
-      required: true,
-    },
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    slug: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-    },
-    description: {
-      type: String,
-      default: undefined,
-    },
-    images: {
-      type: [String],
-      default: [],
-    },
-    originalPrice: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    salePrice: {
-      type: Number,
-      default: 0,
-    },
-    discountPercent: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 100,
-    },
-    discountLabel: {
-      type: String,
-      default: undefined,
-    },
-    unit: {
-      type: String,
-      default: "pc",
-    },
-    stockCount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    ratingAverage: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-    },
-    reviewCount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-  },
-  {
-    timestamps: true,
+export interface IProductWithCategory extends IProduct {
+  categories?: { name: string; slug: string } | null;
+}
+
+export const generateProductSlug = (name: string): string => {
+  return slugify(name, { lower: true, strict: true });
+};
+
+export const computeSalePrice = (originalPrice: number, discountPercent: number): number => {
+  if (discountPercent > 0) {
+    return calculateSalePrice(originalPrice, discountPercent);
   }
-);
-
-productSchema.index({ categoryId: 1, isActive: 1 });
-productSchema.index({ isActive: 1, discountPercent: 1 });
-productSchema.index({ isActive: 1, salePrice: 1 });
-
-productSchema.pre("validate", async function () {
-  if (this.isModified("name")) {
-    this.slug = slugify(this.name, { lower: true, strict: true });
-  }
-  if (this.isModified("originalPrice") || this.isModified("discountPercent")) {
-    if (this.discountPercent > 0) {
-      this.salePrice = calculateSalePrice(this.originalPrice, this.discountPercent);
-    } else {
-      this.salePrice = this.originalPrice;
-    }
-  }
-});
-
-const ProductModel = mongoose.model<IProduct>("Product", productSchema);
-
-export default ProductModel;
+  return originalPrice;
+};

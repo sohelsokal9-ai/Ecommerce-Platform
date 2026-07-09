@@ -1,31 +1,28 @@
-import mongoose from "mongoose";
-import ReviewModel from "../models/review.model";
-import OrderModel from "../models/order.model";
-import ProductModel from "../models/product.model";
+import getSupabaseClient from "../config/supabase.config";
 import { CreateReviewInput } from "../validators/review.validator";
 import {
   BadRequestException,
   NotFoundException,
 } from "../utils/app-error";
 import { ORDER_STATUS, PAYMENT_STATUS } from "../constants/enums";
+import { mapRow, mapRows } from "../utils/map.util";
 
 export const createReviewService = async (
   userId: string,
   data: CreateReviewInput
 ) => {
   const { orderId, orderItemId, rating, comment } = data;
+  const supabase = getSupabaseClient();
 
-  if (
-    !mongoose.isValidObjectId(orderId) ||
-    !mongoose.isValidObjectId(orderItemId)
-  ) {
-    throw new BadRequestException("Invalid order or item ID");
-  }
+  const { data: orderData } = await supabase
+    .from("orders")
+    .select("id, status, payment_status")
+    .eq("id", orderId)
+    .eq("user_id", userId)
+    .single();
 
-  const order = await OrderModel.findOne({
-    _id: orderId,
-    userId,
-  });
+  const order = orderData ? mapRow(orderData) : null;
+
   if (!order) {
     throw new NotFoundException("Order not found");
   }
@@ -39,107 +36,127 @@ export const createReviewService = async (
     );
   }
 
-  const orderItem = order.items.find(
-    (item) => item._id?.toString() === orderItemId
-  );
+  const { data: orderItemData } = await supabase
+    .from("order_items")
+    .select("id, product_id, is_reviewed")
+    .eq("id", orderItemId)
+    .eq("order_id", orderId)
+    .single();
+
+  const orderItem = orderItemData ? mapRow(orderItemData) : null;
+
   if (!orderItem) {
     throw new NotFoundException("Order item not found in this order");
   }
 
-  const existingReview = await ReviewModel.findOne({ orderItemId });
-  if (existingReview) {
+  if (orderItem.isReviewed) {
     throw new BadRequestException("You have already reviewed this item");
   }
 
-  const session = await mongoose.startSession();
+  const { data: existingReviewData } = await supabase
+    .from("reviews")
+    .select("id")
+    .eq("order_item_id", orderItemId)
+    .single();
 
-  const review = await session.withTransaction(async () => {
-    const [created] = await ReviewModel.create(
-      [
-        {
-          userId,
-          orderId,
-          orderItemId,
-          productId: orderItem.productId,
-          rating,
-          comment,
-        },
-      ],
-      { session }
-    );
-
-    await OrderModel.updateOne(
-      { _id: orderId, "items._id": orderItemId },
-      { $set: { "items.$.isReviewed": true } },
-      { session }
-    );
-
-    const [aggResult] = await ReviewModel.aggregate([
-      { $match: { productId: orderItem.productId } },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: "$rating" },
-          totalReviews: { $sum: 1 },
-        },
-      },
-    ]).session(session);
-
-    const newAverage =
-      aggResult?.averageRating != null
-        ? Math.round(aggResult.averageRating * 10) / 10
-        : 0;
-    const newCount = aggResult?.totalReviews ?? 0;
-
-    await ProductModel.updateOne(
-      { _id: orderItem.productId },
-      {
-        $set: {
-          ratingAverage: newAverage,
-          reviewCount: newCount,
-        },
-      },
-      { session }
-    );
-
-    return created;
-  });
-
-  session.endSession();
-
-  if (!review) {
-    throw new BadRequestException("Failed to create review");
+  if (existingReviewData) {
+    throw new BadRequestException("You have already reviewed this item");
   }
 
-  return { review };
+  const { data: review, error: reviewError } = await supabase
+    .from("reviews")
+    .insert({
+      user_id: userId,
+      order_id: orderId,
+      order_item_id: orderItemId,
+      product_id: orderItem.productId,
+      rating,
+      comment: comment || null,
+    })
+    .select()
+    .single();
+
+  if (reviewError) throw new BadRequestException(reviewError.message);
+
+  await supabase
+    .from("order_items")
+    .update({ is_reviewed: true })
+    .eq("id", orderItem._id);
+
+  const { data: aggResult } = await supabase
+    .from("reviews")
+    .select("rating")
+    .eq("product_id", orderItem.productId);
+
+  const ratings = mapRows(aggResult || []).map((r: any) => r.rating);
+  const newAverage = ratings.length > 0
+    ? Math.round((ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length) * 10) / 10
+    : 0;
+  const newCount = ratings.length;
+
+  await supabase
+    .from("products")
+    .update({
+      rating_average: newAverage,
+      review_count: newCount,
+    })
+    .eq("id", orderItem.productId);
+
+  return { review: mapRow(review) };
 };
 
 export const getUserReviewsService = async (userId: string) => {
-  const reviews = await ReviewModel.find({ userId })
-    .populate("productId", "name slug images")
-    .sort({ createdAt: -1 })
-    .lean();
+  const supabase = getSupabaseClient();
 
-  return { reviews };
+  const { data: reviews, error } = await supabase
+    .from("reviews")
+    .select("*, products(name, slug, images)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const mapped = (reviews || []).map((r: any) => ({
+    ...mapRow(r),
+    product: r.products ? mapRow(r.products) : null,
+  }));
+
+  return { reviews: mapped };
 };
 
 export const getUserReviewableOrderItemsService = async (
   userId: string
 ) => {
-  const orders = await OrderModel.find({
-    userId,
-    status: ORDER_STATUS.DELIVERED,
-    paymentStatus: PAYMENT_STATUS.PAID,
-    "items.isReviewed": false,
-  })
-    .sort({ createdAt: -1 })
-    .select("_id items orderNo createdAt")
-    .lean();
+  const supabase = getSupabaseClient();
 
-     const filteredOrders = orders.map(order => ({
-    ...order,
-    items: order.items.filter(item => item.isReviewed === false)
-  }));
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("id, order_no, created_at")
+    .eq("user_id", userId)
+    .eq("status", ORDER_STATUS.DELIVERED)
+    .eq("payment_status", PAYMENT_STATUS.PAID)
+    .order("created_at", { ascending: false });
 
-  return { orders:filteredOrders };
+  if (!orders || orders.length === 0) {
+    return { orders: [] };
+  }
+
+  const filteredOrders = [];
+
+  for (const order of orders) {
+    const { data: items } = await supabase
+      .from("order_items")
+      .select("id, product_id, name, image, sale_price, quantity, is_reviewed")
+      .eq("order_id", order.id)
+      .eq("is_reviewed", false);
+
+    if (items && items.length > 0) {
+      filteredOrders.push({
+        ...mapRow(order),
+        items: mapRows(items),
+      });
+    }
+  }
+
+  return { orders: filteredOrders };
 };
