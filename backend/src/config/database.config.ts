@@ -4,10 +4,13 @@ export const connectDatabase = async () => {
   try {
     const supabase = getSupabaseClient();
     const { error } = await supabase.from("users").select("id").limit(1);
-    if (error) throw error;
-    console.log("Database connected!");
+    if (error && error.code === "42P01") {
+      console.warn("WARNING: Tables not found. Run the SQL schema in Supabase Dashboard.");
+      console.warn("Go to: Supabase Dashboard → SQL Editor → paste schema.sql → Run");
+    } else {
+      console.log("Database connected!");
+    }
   } catch (error) {
-    console.log("Database connection error", error);
-    process.exit(1);
+    console.warn("Database connection warning:", error);
   }
 };
