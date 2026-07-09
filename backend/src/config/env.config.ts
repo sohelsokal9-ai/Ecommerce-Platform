@@ -1,4 +1,4 @@
-import { getEnv } from "../utils/get-env.util";
+import { getEnv, getEnvOptional } from "../utils/get-env.util";
 
 export const envConfig = {
   NODE_ENV: getEnv("NODE_ENV"),
@@ -8,8 +8,8 @@ export const envConfig = {
   JWT_SECRET: getEnv("JWT_SECRET"),
   JWT_EXPIRES_IN: getEnv("JWT_EXPIRES_IN"),
 
-  STRIPE_SECRET_KEY: getEnv("STRIPE_SECRET_KEY"),
-  STRIPE_WEBHOOK_SECRET: getEnv("STRIPE_WEBHOOK_SECRET"),
+  STRIPE_SECRET_KEY: getEnvOptional("STRIPE_SECRET_KEY"),
+  STRIPE_WEBHOOK_SECRET: getEnvOptional("STRIPE_WEBHOOK_SECRET"),
 
   CLOUDINARY_CLOUD_NAME: getEnv("CLOUDINARY_CLOUD_NAME"),
   CLOUDINARY_API_KEY: getEnv("CLOUDINARY_API_KEY"),

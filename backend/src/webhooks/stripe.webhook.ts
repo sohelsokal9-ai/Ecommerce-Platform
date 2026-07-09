@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
-import stripeClient from "../config/stripe.config";
+import { getStripeClient } from "../config/stripe.config";
 import { envConfig } from "../config/env.config";
 import OrderModel from "../models/order.model";
 import CartModel from "../models/cart.model";
@@ -16,10 +16,10 @@ export const stripeWebhookHandler = async (req: Request, res: Response, next: Ne
 
   let event;
   try {
-    event = stripeClient.webhooks.constructEvent(
+    event = getStripeClient().webhooks.constructEvent(
       req.body,
       sig,
-      envConfig.STRIPE_WEBHOOK_SECRET
+      envConfig.STRIPE_WEBHOOK_SECRET!
     );
   } catch {
     res.status(400).json({ message: "Webhook signature verification failed" });

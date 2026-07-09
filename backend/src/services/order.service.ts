@@ -8,7 +8,7 @@ import { CreateOrderInput } from "../validators/order.validator";
 import { BadRequestException, NotFoundException } from "../utils/app-error";
 import { calculateCartTotals } from "../utils/cart.util";
 import { PAYMENT_METHODS, PaymentMethod } from "../constants/enums";
-import stripeClient from "../config/stripe.config";
+import { getStripeClient, isStripeConfigured } from "../config/stripe.config";
 import { envConfig } from "../config/env.config";
 
 
@@ -94,6 +94,10 @@ export const createOrderService = async (
     return { order: orderDoc, stripeUrl: null };
   }
 
+  if (!isStripeConfigured()) {
+    throw new BadRequestException("Online payment is not available. Please use Cash on Delivery.");
+  }
+
   const lineItems: Array<{
     price_data: {
       currency: string;
@@ -138,7 +142,7 @@ export const createOrderService = async (
   const user = await UserModel.findById(userId).select("email").lean();
   const customerEmail = user?.email;
 
-  const session = await stripeClient.checkout.sessions.create({
+  const session = await getStripeClient().checkout.sessions.create({
     payment_method_types: ["card"],
     mode: "payment",
     customer_email: customerEmail,

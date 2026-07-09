@@ -5,3 +5,7 @@ export const getEnv = (key: string): string => {
   }
   return value;
 };
+
+export const getEnvOptional = (key: string): string | undefined => {
+  return process.env[key] || undefined;
+};
