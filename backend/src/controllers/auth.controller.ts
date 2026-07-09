@@ -14,13 +14,13 @@ import {
 import { USER_ROLES } from "../constants/enums";
 
 const toAuthUser = (user: any) => ({
-  _id: String(user.id),
+  _id: String(user._id || user.id),
   name: user.name,
   email: user.email,
   avatar: user.avatar ?? null,
   isAdmin: user.role === USER_ROLES.ADMIN,
-  createdAt: user.created_at,
-  updatedAt: user.updated_at,
+  createdAt: user.createdAt || user.created_at,
+  updatedAt: user.updatedAt || user.updated_at,
 });
 
 export const registerController = asyncHandler(
@@ -29,7 +29,7 @@ export const registerController = asyncHandler(
     const guestCartId = req.cookies?.instant_guest_cart_id ?? null;
 
     const user = await registerAndMergeGuestCart(data, guestCartId);
-    const userId = user.id;
+    const userId = user._id || user.id;
 
     if (guestCartId) clearGuestCartCookie(res);
 
@@ -50,7 +50,7 @@ export const loginController = asyncHandler(
       data.password,
       guestCartId
     );
-    const userId = user.id;
+    const userId = user._id || user.id;
 
     if (guestCartId) clearGuestCartCookie(res);
 
